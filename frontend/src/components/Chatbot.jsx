@@ -4,6 +4,8 @@ import axios from 'axios';
 import jsPDF from 'jspdf';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import DocumentSummary from './DocumentSummary';
 import './Chatbot.css';
 import './Summary.css';
@@ -384,7 +386,10 @@ const Chatbot = ({ documentNames, documentIds, onBackToUpload }) => {
                     <div className="message-content">
                       {msg.sender === 'bot' ? (
                         <div className="bot-markdown">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm, remarkMath]}
+                            rehypePlugins={[rehypeKatex]}
+                          >
                             {typeof msg.text === 'string' ? msg.text : ''}
                           </ReactMarkdown>
                         </div>

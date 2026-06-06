@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import './DocumentSummary.css';
 
 // Helper function to clean up backend text before rendering
@@ -254,7 +256,10 @@ const DocumentSummary = ({ documentIds, documentNames, onSummariesUpdate }) => {
                 ) : (
                   // >>> THIS IS THE UPDATED PART USING REACT MARKDOWN <<<
                   <div className="markdown-body">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm, remarkMath]}
+                      rehypePlugins={[rehypeKatex]}
+                    >
                       {cleanMarkdown(summary.summary)}
                     </ReactMarkdown>
                   </div>
