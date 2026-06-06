@@ -1,34 +1,35 @@
-# For Embedding Models
-# NOTE: Embeddings are computed via the HuggingFace Inference API (see
-# utils/embeddings.py), NOT a local model. torch/sentence-transformers/
-# transformers are intentionally NOT installed because they exceed Render's
-# 512 MB free tier and OOM-kill the container during uploads.
-numpy==1.26.4
+# LangChain — pinned to avoid slow dependency backtracking
+langchain==0.3.25
+langchain-core==0.3.65
+langchain-community==0.3.24
+langchain-groq==0.3.2
+langchain-mongodb==0.6.0
 
-# For Text Chunking
-langchain==0.1.15
+# LLM
+groq==0.28.0
 
-# For Document Parsing
-PyMuPDF==1.23.21      # (fitz)
-python-docx==1.1.0
-
-# For Text Processing
-nltk==3.8.1
-
-# MongoDB Driver (optional, for later DB interactions)
-pymongo==4.5.0
-
-# For API calls
+# Embeddings
 requests==2.31.0
 
-# For environment variables
+# Vector store + DB
+pymongo==4.6.1
+
+# Document parsing
+PyMuPDF==1.24.4
+python-docx==1.1.0
+docx2txt==0.8
+
+# Utilities
+numpy==1.26.4
+nltk==3.8.1
+langdetect==1.0.9
 python-dotenv==1.0.1
 psutil==5.9.8
 
-# For Backend API
+# Auth
+PyJWT==2.8.0
+
+# Server
 flask==2.3.3
 flask-cors==4.0.0
 waitress==3.0.0
-
-# For Translation
-langdetect==1.0.9

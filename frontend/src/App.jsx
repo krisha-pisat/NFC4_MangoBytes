@@ -1,81 +1,99 @@
-// src/App.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import AuthPage from './components/AuthPage';
 import FileUploader from './components/FileUploader';
 import Chatbot from './components/Chatbot';
-import DocumentSummary from './components/DocumentSummary';
 import './App.css';
 
 function App() {
-  const [currentPage, setCurrentPage] = useState('upload'); // 'upload' or 'chat'
+  const [currentPage, setCurrentPage] = useState('chat');
   const [uploadedDocuments, setUploadedDocuments] = useState([]);
+  const [user, setUser] = useState(null); // { token, username, email }
 
-  const handleUploadSuccess = (uploadResponse) => {
-    console.log('📤 Upload response received:', uploadResponse);
-    
-    // Handle multiple documents
-    if (uploadResponse.documentIds && uploadResponse.filenames) {
-      // Multiple documents uploaded
-      const newDocuments = uploadResponse.documentIds.map((docId, index) => ({
-        name: uploadResponse.filenames[index] || `Document ${index + 1}`,
-        id: docId,
-        uploadTime: new Date().toISOString()
-      }));
-      
-      console.log('📋 Setting multiple documents:', newDocuments);
-      setUploadedDocuments(prev => {
-        // Add new documents, avoiding duplicates
-        const existingIds = new Set(prev.map(doc => doc.id));
-        const uniqueNewDocs = newDocuments.filter(doc => !existingIds.has(doc.id));
-        return [...prev, ...uniqueNewDocs];
-      });
-    } else {
-      // Single document uploaded (backward compatibility)
-      const documentInfo = {
-        name: uploadResponse.filename || 'Document',
-        id: uploadResponse.documentId || 'unknown',
-        uploadTime: new Date().toISOString()
-      };
-      
-      console.log('📋 Setting single document info:', documentInfo);
-      
-      // Add to existing documents or create new array
-      setUploadedDocuments(prev => {
-        // Check if document already exists
-        const exists = prev.find(doc => doc.id === documentInfo.id);
-        if (exists) {
-          return prev; // Don't add duplicate
-        }
-        return [...prev, documentInfo];
-      });
+  // Restore session from localStorage on load
+  useEffect(() => {
+    const stored = localStorage.getItem('mb_user');
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        setUser(parsed);
+        axios.defaults.headers.common['Authorization'] = `Bearer ${parsed.token}`;
+      } catch {
+        localStorage.removeItem('mb_user');
+      }
     }
-    
-    // Navigate to chat page
-    setCurrentPage('chat');
+  }, []);
+
+  const handleAuthSuccess = ({ token, username, email }) => {
+    const userData = { token, username, email };
+    localStorage.setItem('mb_user', JSON.stringify(userData));
+    axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    setUser(userData);
   };
 
-  const handleBackToUpload = () => {
-    // Reset state and go back to upload page
+  const handleLogout = () => {
+    localStorage.removeItem('mb_user');
+    delete axios.defaults.headers.common['Authorization'];
+    setUser(null);
     setUploadedDocuments([]);
     setCurrentPage('upload');
   };
 
-  // Extract document IDs and names for the summary component
-  const documentIds = uploadedDocuments.map(doc => doc.id);
-  const documentNames = uploadedDocuments.map(doc => doc.name);
+  const handleUploadSuccess = (uploadResponse) => {
+    if (uploadResponse.documentIds && uploadResponse.filenames) {
+      const newDocuments = uploadResponse.documentIds.map((docId, index) => ({
+        name: uploadResponse.filenames[index] || `Document ${index + 1}`,
+        id:   docId,
+      }));
+      setUploadedDocuments((prev) => {
+        const existingIds = new Set(prev.map((doc) => doc.id));
+        return [...prev, ...newDocuments.filter((doc) => !existingIds.has(doc.id))];
+      });
+    } else {
+      const documentInfo = {
+        name: uploadResponse.filename || 'Document',
+        id:   uploadResponse.documentId || 'unknown',
+      };
+      setUploadedDocuments((prev) => {
+        if (prev.find((doc) => doc.id === documentInfo.id)) return prev;
+        return [...prev, documentInfo];
+      });
+    }
+    setCurrentPage('chat');
+  };
+
+  const handleBackToUpload = () => {
+    setUploadedDocuments([]);
+    setCurrentPage('upload');
+  };
+
+  const documentIds   = uploadedDocuments.map((doc) => doc.id);
+  const documentNames = uploadedDocuments.map((doc) => doc.name);
+
+  // Show auth page if not logged in
+  if (!user) {
+    return <AuthPage onAuthSuccess={handleAuthSuccess} />;
+  }
 
   return (
     <div className="App">
       {currentPage === 'upload' ? (
         <div className="upload-page">
-          <FileUploader onUploadSuccess={handleUploadSuccess} />
+          <FileUploader
+            onUploadSuccess={handleUploadSuccess}
+            username={user.username}
+            onLogout={handleLogout}
+          />
         </div>
       ) : (
         <div className="chat-layout">
           <div className="chat-section">
-            <Chatbot 
+            <Chatbot
               documentNames={documentNames}
               documentIds={documentIds}
               onBackToUpload={handleBackToUpload}
+              username={user.username}
+              onLogout={handleLogout}
             />
           </div>
         </div>

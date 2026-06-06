@@ -1,2 +1,24 @@
-"/backend/.env" 
-backend/.env 
+# Environment
+backend/.env
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+venv311/
+.venv/
+
+# Logs
+*.log
+multilingual_app.log
+
+# Claude / AI assistant files
+.claude/
+memory/
+
+# Misc
+ra.json
+*.tmp

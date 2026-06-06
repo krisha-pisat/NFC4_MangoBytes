@@ -1,70 +1,61 @@
-"""
-Hosted embedding helper.
-
-The backend runs on a 512 MB instance, which is too small to load a local
-PyTorch / sentence-transformers model. Instead we call the HuggingFace
-Inference API for the SAME model (all-MiniLM-L6-v2), so embeddings stay
-384-dimensional and remain compatible with the existing MongoDB vectors.
-
-Requires the env var HF_TOKEN (a free token from
-https://huggingface.co/settings/tokens).
-"""
 import os
 import time
 import requests
+from typing import List
+from dotenv import load_dotenv
+from langchain_core.embeddings import Embeddings
+
+load_dotenv()
 
 HF_TOKEN = os.getenv("HF_TOKEN")
 HF_MODEL = os.getenv("HF_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
-# HuggingFace Inference Providers router (the legacy api-inference.huggingface.co
-# feature-extraction endpoint has been retired).
-HF_URL = f"https://router.huggingface.co/hf-inference/models/{HF_MODEL}/pipeline/feature-extraction"
+HF_URL   = f"https://router.huggingface.co/hf-inference/models/{HF_MODEL}/pipeline/feature-extraction"
 
-# Keep batches small so request bodies stay well within API limits.
 _BATCH_SIZE = 32
-_TIMEOUT = 120
+_TIMEOUT    = 120
 
 
-def _headers():
-    headers = {"Content-Type": "application/json"}
-    if HF_TOKEN:
-        headers["Authorization"] = f"Bearer {HF_TOKEN}"
-    return headers
-
-
-def _embed_batch(batch, max_retries=4):
-    """Embed a list of strings, retrying while the model warms up (503)."""
-    payload = {"inputs": batch}
-    last_err = None
-    for attempt in range(max_retries):
-        try:
-            resp = requests.post(HF_URL, headers=_headers(), json=payload, timeout=_TIMEOUT)
-            # 503 = model is loading on HF's side; wait and retry.
-            if resp.status_code == 503:
-                time.sleep(5 * (attempt + 1))
-                continue
-            resp.raise_for_status()
-            return resp.json()
-        except Exception as e:  # noqa: BLE001 - surface a clean error to caller
-            last_err = e
-            time.sleep(2 * (attempt + 1))
-    raise RuntimeError(f"HuggingFace embedding request failed: {last_err}")
-
-
-def embed_texts(texts):
+class HuggingFaceRouterEmbeddings(Embeddings):
     """
-    Return embeddings for `texts`.
-
-    - If `texts` is a single string, returns a single vector (list[float]).
-    - If `texts` is a list of strings, returns a list of vectors.
+    Custom LangChain Embeddings class that calls the HuggingFace router
+    endpoint (router.huggingface.co) instead of the retired
+    api-inference.huggingface.co endpoint.
     """
-    single = isinstance(texts, str)
-    inputs = [texts] if single else list(texts)
 
-    if not inputs:
-        return [] if not single else []
+    def _embed_batch(self, texts: List[str], max_retries: int = 4) -> List[List[float]]:
+        headers = {"Content-Type": "application/json"}
+        if HF_TOKEN:
+            headers["Authorization"] = f"Bearer {HF_TOKEN}"
 
-    vectors = []
-    for i in range(0, len(inputs), _BATCH_SIZE):
-        vectors.extend(_embed_batch(inputs[i:i + _BATCH_SIZE]))
+        last_err = None
+        for attempt in range(max_retries):
+            try:
+                resp = requests.post(
+                    HF_URL,
+                    headers=headers,
+                    json={"inputs": texts},
+                    timeout=_TIMEOUT
+                )
+                if resp.status_code == 503:
+                    time.sleep(5 * (attempt + 1))
+                    continue
+                resp.raise_for_status()
+                return resp.json()
+            except Exception as e:
+                last_err = e
+                time.sleep(2 * (attempt + 1))
 
-    return vectors[0] if single else vectors
+        raise RuntimeError(f"HuggingFace embedding failed: {last_err}")
+
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        vectors = []
+        for i in range(0, len(texts), _BATCH_SIZE):
+            vectors.extend(self._embed_batch(texts[i:i + _BATCH_SIZE]))
+        return vectors
+
+    def embed_query(self, text: str) -> List[float]:
+        return self._embed_batch([text])[0]
+
+
+def get_embeddings() -> HuggingFaceRouterEmbeddings:
+    return HuggingFaceRouterEmbeddings()

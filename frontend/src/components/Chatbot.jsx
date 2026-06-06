@@ -1,5 +1,5 @@
 // src/components/Chatbot.jsx
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import jsPDF from 'jspdf';
 import ReactMarkdown from 'react-markdown';
@@ -7,19 +7,127 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import DocumentSummary from './DocumentSummary';
+import ChatHistorySidebar from './ChatHistorySidebar';
 import './Chatbot.css';
 import './Summary.css';
 
-const Chatbot = ({ documentNames, documentIds, onBackToUpload }) => {
-  console.log('🤖 Chatbot initialized with:', { documentNames, documentIds });
-  
+const Chatbot = ({ documentNames, documentIds, onBackToUpload, username, onLogout }) => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [documentSummaries, setDocumentSummaries] = useState([]);
+  const [sessionId, setSessionId] = useState(() => crypto.randomUUID());
+  const [sessions, setSessions] = useState([]);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [activeDocIds, setActiveDocIds] = useState(documentIds || []);
+  const [activeDocNames, setActiveDocNames] = useState(documentNames || []);
+  const [isAddingDoc, setIsAddingDoc] = useState(false);
   const chatboxRef = useRef(null);
   const inputRef = useRef(null);
+  const addDocInputRef = useRef(null);
+
+  // ── Session history ────────────────────────────────────────────────────────
+  const fetchSessions = useCallback(async () => {
+    try {
+      const res = await axios.get(`${import.meta.env.VITE_API_BASE_URL}/api/sessions`);
+      setSessions(res.data);
+    } catch (err) {
+      console.error('Failed to fetch sessions:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSessions();
+    // Refresh sidebar every 15 seconds so the current session appears while chatting
+    const interval = setInterval(fetchSessions, 15000);
+    return () => clearInterval(interval);
+  }, [fetchSessions]);
+
+  const handleNewChat = () => {
+    // Go back to upload page so user can choose new documents
+    if (onBackToUpload) onBackToUpload();
+  };
+
+  const handleAddDocument = async (e) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+    // Reset so the same file can be picked again later
+    e.target.value = '';
+
+    setIsAddingDoc(true);
+    try {
+      const formData = new FormData();
+      files.forEach((file, i) => formData.append(`file${i}`, file));
+
+      const res = await axios.post(
+        `${import.meta.env.VITE_API_BASE_URL}/api/upload`,
+        formData,
+        { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000 }
+      );
+
+      const newIds   = res.data.documentIds   || [res.data.documentId];
+      const newNames = res.data.filenames      || [res.data.filename];
+
+      setActiveDocIds(prev  => [...prev,  ...newIds.filter(id => !prev.includes(id))]);
+      setActiveDocNames(prev => [...prev, ...newNames.filter(n => !prev.includes(n))]);
+
+      const added = newNames.join(', ');
+      setMessages(prev => [
+        ...prev,
+        {
+          sender: 'bot',
+          text: `**${added}** added to this conversation. You can now ask questions about all uploaded documents.`,
+          timestamp: new Date(),
+        },
+      ]);
+    } catch (err) {
+      const msg = err.response?.data?.error || 'Failed to upload document.';
+      setMessages(prev => [
+        ...prev,
+        { sender: 'bot', text: `Upload failed: ${msg}`, timestamp: new Date() },
+      ]);
+    } finally {
+      setIsAddingDoc(false);
+    }
+  };
+
+  const handleSessionDelete = async (sessionIdToDelete) => {
+    await axios.delete(`${import.meta.env.VITE_API_BASE_URL}/api/sessions/${sessionIdToDelete}`);
+    // If we just deleted the active session, reset to a fresh chat
+    if (sessionIdToDelete === sessionId) {
+      setMessages([]);
+      setSessionId(crypto.randomUUID());
+    }
+    fetchSessions();
+  };
+
+  const handleSessionSelect = async (session) => {
+    try {
+      const res = await axios.get(
+        `${import.meta.env.VITE_API_BASE_URL}/api/sessions/${session.session_id}`
+      );
+      const loaded = res.data.messages.map((m) => ({
+        sender: m.sender,
+        text: m.text,
+        timestamp: new Date(),
+      }));
+      setMessages(loaded);
+      setSessionId(session.session_id);
+
+      // Restore the documents that were used in this session
+      if (res.data.document_ids?.length) {
+        setActiveDocIds(res.data.document_ids);
+        setActiveDocNames(res.data.document_names || []);
+      } else {
+        // Old session with no stored doc info — clear so UI shows "no doc" state
+        setActiveDocIds([]);
+        setActiveDocNames([]);
+      }
+    } catch (err) {
+      console.error('Failed to load session:', err);
+    }
+  };
 
   // Sample suggestions for empty state
   const suggestions = [
@@ -59,23 +167,20 @@ const Chatbot = ({ documentNames, documentIds, onBackToUpload }) => {
       // API call to your backend
       const response = await axios.post(`${import.meta.env.VITE_API_BASE_URL}/api/query`, {
         message: userMessage,
-        // Send all document IDs for multi-document analysis
-        document_ids: documentIds || []
+        document_ids: activeDocIds,
+        document_names: activeDocNames,
+        session_id: sessionId,
       }, {
-        timeout: 180000 // 180 second timeout for longer summaries
+        timeout: 180000,
       });
 
-      console.log('📥 Frontend received response:', response.data);
-      console.log('🔍 Response keys:', Object.keys(response.data));
-      console.log('📄 Answer field:', response.data.answer);
-      console.log('📄 Reply field:', response.data.reply);
       const botReply = response.data.answer || response.data.reply || "I'm processing your request. Could you please try rephrasing your question?";
-      console.log('💬 Bot reply:', botReply);
-      setMessages((prev) => [...prev, { 
-        sender: 'bot', 
-        text: botReply, 
-        timestamp: new Date() 
+      setMessages((prev) => [...prev, {
+        sender: 'bot',
+        text: botReply,
+        timestamp: new Date(),
       }]);
+      fetchSessions();
     } catch (error) {
       console.error('Error sending message:', error);
       let errorMessage = 'I apologize, but I encountered an issue processing your request. Please try again.';
@@ -293,6 +398,17 @@ const Chatbot = ({ documentNames, documentIds, onBackToUpload }) => {
           <h1 className="chat-title">Document Intelligence Hub</h1>
         </div>
                  <div className="header-right">
+           {username && (
+             <div className="user-info">
+               <span className="user-avatar">👤</span>
+               <span className="user-name">{username}</span>
+             </div>
+           )}
+           {onLogout && (
+             <button className="logout-button" onClick={onLogout} title="Log out">
+               Log out
+             </button>
+           )}
            {(messages.length > 0 || documentSummaries.length > 0) && (
              <>
                {documentSummaries.length > 0 && (
@@ -336,15 +452,15 @@ const Chatbot = ({ documentNames, documentIds, onBackToUpload }) => {
              </>
            )}
          </div>
-        {documentNames && documentNames.length > 0 && (
+        {activeDocNames.length > 0 && (
           <div className="document-info">
-            {documentNames.length === 1 ? (
-              documentNames[0]
+            {activeDocNames.length === 1 ? (
+              activeDocNames[0]
             ) : (
               <div className="multiple-docs">
-                <span>📚 {documentNames.length} Documents</span>
+                <span>📚 {activeDocNames.length} Documents</span>
                 <div className="doc-list">
-                  {documentNames.map((name, index) => (
+                  {activeDocNames.map((name, index) => (
                     <span key={index} className="doc-name">{name}</span>
                   ))}
                 </div>
@@ -354,12 +470,37 @@ const Chatbot = ({ documentNames, documentIds, onBackToUpload }) => {
         )}
       </div>
 
-      {/* Main layout with two panels */}
+      {/* Main layout with three panels */}
       <div className="chatbot-main-container">
-        {/* Left panel - Chatbot */}
+        {/* Far-left panel - Chat History Sidebar */}
+        <ChatHistorySidebar
+          sessions={sessions}
+          activeSessionId={sessionId}
+          onNewChat={handleNewChat}
+          onSessionSelect={handleSessionSelect}
+          onSessionDelete={handleSessionDelete}
+          collapsed={sidebarCollapsed}
+          onToggle={() => setSidebarCollapsed(c => !c)}
+        />
+
+        {/* Middle panel - Chatbot */}
         <div className="chatbot-container">
           <div className="chatbox" ref={chatboxRef}>
-            {messages.length === 0 ? (
+            {messages.length === 0 && activeDocIds.length === 0 ? (
+              /* No documents loaded yet */
+              <div className="empty-chat-state">
+                <div className="empty-icon">📁</div>
+                <div className="empty-title">No document loaded</div>
+                <div className="empty-description">
+                  Click the <strong>+</strong> button below to upload a document and start asking questions,
+                  or select a previous conversation from the sidebar.
+                </div>
+                <button className="upload-cta-btn" onClick={onBackToUpload}>
+                  Upload a Document
+                </button>
+              </div>
+            ) : messages.length === 0 ? (
+              /* Documents loaded, no messages yet */
               <div className="empty-chat-state">
                 <div className="empty-icon">🤖</div>
                 <div className="empty-title">Ready to analyze your documents!</div>
@@ -417,6 +558,24 @@ const Chatbot = ({ documentNames, documentIds, onBackToUpload }) => {
 
           {/* Input area */}
           <div className="input-area">
+            {/* Hidden file picker for adding documents mid-conversation */}
+            <input
+              ref={addDocInputRef}
+              type="file"
+              accept=".pdf,.doc,.docx,.txt"
+              multiple
+              style={{ display: 'none' }}
+              onChange={handleAddDocument}
+            />
+            <button
+              className="add-doc-btn"
+              onClick={() => addDocInputRef.current?.click()}
+              disabled={isAddingDoc || isLoading}
+              title="Add more documents to this conversation"
+            >
+              {isAddingDoc ? <div className="button-spinner small"></div> : '+'}
+            </button>
+
             <div className="input-wrapper">
               <div className="input-icon">💬</div>
               <input
@@ -430,10 +589,11 @@ const Chatbot = ({ documentNames, documentIds, onBackToUpload }) => {
                 maxLength={500}
               />
             </div>
-            <button 
-              className="send-button" 
+            <button
+              className="send-button"
               onClick={() => sendMessage()}
-              disabled={isLoading || input.trim() === ''}
+              disabled={isLoading || input.trim() === '' || activeDocIds.length === 0}
+              title={activeDocIds.length === 0 ? 'Upload a document first' : ''}
             >
               {isLoading ? (
                 <div className="button-spinner"></div>
@@ -449,9 +609,9 @@ const Chatbot = ({ documentNames, documentIds, onBackToUpload }) => {
 
                  {/* Right panel - Document Summary */}
          <div className="document-summary-panel">
-           <DocumentSummary 
-             documentIds={documentIds} 
-             documentNames={documentNames} 
+           <DocumentSummary
+             documentIds={activeDocIds}
+             documentNames={activeDocNames}
              onSummariesUpdate={handleSummariesUpdate}
            />
          </div>

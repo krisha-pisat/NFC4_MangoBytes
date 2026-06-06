@@ -1,11 +1,27 @@
 import os
-import requests
-from dotenv import load_dotenv
-from .groq_api import groq_generate
 import re
 import langdetect
+from dotenv import load_dotenv
+from langchain_groq import ChatGroq
+from langchain_core.messages import HumanMessage
 
 load_dotenv()
+
+_llm = ChatGroq(
+    model="llama-3.1-8b-instant",
+    api_key=os.getenv("GROQ_API_KEY"),
+    temperature=0.1,
+    max_tokens=1500
+)
+
+def groq_generate(prompt, **kwargs):
+    """Drop-in replacement for old groq_api.groq_generate using ChatGroq."""
+    try:
+        response = _llm.invoke([HumanMessage(content=prompt)])
+        return response.content
+    except Exception as e:
+        print(f"❌ ChatGroq error: {e}")
+        return None
 
 def detect_language(text):
     """

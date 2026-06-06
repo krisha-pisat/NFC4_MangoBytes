@@ -53,13 +53,57 @@ const DocumentSummary = ({ documentIds, documentNames, onSummariesUpdate }) => {
       setLoading(true);
       setError(null);
 
+      // ── Check cache first ────────────────────────────────────────────────
+      try {
+        const cacheRes = await axios.post(
+          `${import.meta.env.VITE_API_BASE_URL}/api/summaries`,
+          { document_ids: documentIds }
+        );
+        const cached = cacheRes.data; // { 'summary-{id}': text, 'comparison-{ids}': text }
+
+        const results = documentIds.map((docId, index) => {
+          const text = cached[`summary-${docId}`];
+          return text
+            ? { id: docId, name: documentNames[index] || `Document ${index + 1}`, summary: text, timestamp: new Date(), type: 'individual' }
+            : null;
+        }).filter(Boolean);
+
+        if (documentIds.length > 1) {
+          const compKey = `comparison-${documentIds.join('-')}`;
+          if (cached[compKey]) {
+            results.push({
+              id: 'comparison',
+              name: `📊 Comparison of ${documentIds.length} Documents`,
+              summary: cached[compKey],
+              timestamp: new Date(),
+              type: 'comparison',
+            });
+          }
+        }
+
+        const allFound = results.filter(r => r.type === 'individual').length === documentIds.length
+          && (documentIds.length === 1 || results.some(r => r.type === 'comparison'));
+
+        if (allFound) {
+          setSummaries(results);
+          const expandId = results.find(r => r.type === 'comparison')?.id ?? results[0]?.id;
+          if (expandId) setExpandedDocs(new Set([expandId]));
+          setLoading(false);
+          return; // ✅ served from cache, no LLM call needed
+        }
+      } catch (_) {
+        // Cache unreachable — fall through to generation
+      }
+      // ── End cache check ──────────────────────────────────────────────────
+
       if (documentIds.length === 1) {
         // Single document summary
         const summaryPromises = documentIds.map(async (docId, index) => {
           try {
             const response = await axios.post(`${import.meta.env.VITE_API_BASE_URL}/api/query`, {
               message: 'Provide a comprehensive summary of this document with detailed analysis, key points, and insights',
-              document_ids: [docId]
+              document_ids: [docId],
+              session_id: `summary-${docId}`
             }, {
               timeout: 120000 // 2 minutes timeout
             });
@@ -98,7 +142,8 @@ const DocumentSummary = ({ documentIds, documentNames, onSummariesUpdate }) => {
           try {
             const response = await axios.post(`${import.meta.env.VITE_API_BASE_URL}/api/query`, {
               message: 'Provide a comprehensive summary of this document with detailed analysis, key points, and insights',
-              document_ids: [docId]
+              document_ids: [docId],
+              session_id: `summary-${docId}`
             }, {
               timeout: 120000 // 2 minutes timeout
             });
@@ -131,7 +176,8 @@ const DocumentSummary = ({ documentIds, documentNames, onSummariesUpdate }) => {
           console.log('🔄 Loading comparison summary for documents:', documentIds);
           const comparisonResponse = await axios.post(`${import.meta.env.VITE_API_BASE_URL}/api/query`, {
             message: 'Create a comprehensive summary comparing all uploaded documents. Analyze similarities, differences, and provide insights across all documents.',
-            document_ids: documentIds
+            document_ids: documentIds,
+            session_id: `comparison-${documentIds.join('-')}`
           }, {
             timeout: 180000 // 3 minutes timeout for multi-doc
           });

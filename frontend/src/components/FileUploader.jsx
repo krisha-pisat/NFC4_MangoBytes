@@ -11,6 +11,7 @@ const FileUploader = ({ onUploadSuccess }) => {
   const [isDragOver, setIsDragOver] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const fileInputRef = useRef(null);
+  const isSubmittingRef = useRef(false);
 
   const validateFiles = (files) => {
     const maxTotalSize = 10 * 1024 * 1024; // 10MB total
@@ -39,8 +40,10 @@ const FileUploader = ({ onUploadSuccess }) => {
 
   const handleFileSelect = (newFiles) => {
     if (!newFiles || newFiles.length === 0) return;
-    
-    const allFiles = [...selectedFiles, ...newFiles];
+
+    const existingNames = new Set(selectedFiles.map(f => f.name));
+    const deduped = newFiles.filter(f => !existingNames.has(f.name));
+    const allFiles = [...selectedFiles, ...deduped];
     const validation = validateFiles(allFiles);
 
     if (!validation.isValid) {
@@ -92,12 +95,16 @@ const FileUploader = ({ onUploadSuccess }) => {
 
   // This is now the form submission handler
   const handleUpload = async (e) => {
-    // This is the crucial line that stops the page reload
     e.preventDefault();
+
+    // Prevent double-click / double-submit before React re-renders
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
 
     if (selectedFiles.length === 0) {
       setUploadMessage('Please select at least one file');
       setMessageType('error');
+      isSubmittingRef.current = false;
       return;
     }
 
@@ -135,24 +142,21 @@ const FileUploader = ({ onUploadSuccess }) => {
 
       clearInterval(progressInterval);
       setUploadProgress(100);
-      
       setUploadMessage('Upload successful! Redirecting to chat...');
       setMessageType('success');
-      
-      // Redirect to chat page after success
+
+      // Keep isUploading = true so button stays disabled until we navigate away
       setTimeout(() => {
         if (onUploadSuccess) {
           onUploadSuccess(response.data);
         }
-      }, 2000);
-      
+      }, 1500);
+
     } catch (error) {
       console.error('Upload failed:', error);
-      console.error('Error response:', error.response?.data);
       setUploadProgress(0);
-      
+
       let errorMessage = 'Upload failed. Please try again.';
-      
       if (error.code === 'ECONNABORTED') {
         errorMessage = 'Upload timeout. Please check your connection and try again.';
       } else if (error.response?.data?.error) {
@@ -162,11 +166,11 @@ const FileUploader = ({ onUploadSuccess }) => {
       } else if (error.message) {
         errorMessage = error.message;
       }
-      
+
       setUploadMessage(errorMessage);
       setMessageType('error');
-    } finally {
       setIsUploading(false);
+      isSubmittingRef.current = false;
     }
   };
 
@@ -233,18 +237,18 @@ const FileUploader = ({ onUploadSuccess }) => {
                 }
               </p>
 
-              <div className="file-input-wrapper">
-                <input 
+              <div className="file-input-wrapper" onClick={e => e.stopPropagation()}>
+                <input
                   ref={fileInputRef}
-                  type="file" 
+                  type="file"
                   multiple
                   id="file-input"
-                  accept=".pdf,.docx,.txt" 
+                  accept=".pdf,.docx,.txt"
                   onChange={handleFileChange}
                   disabled={isUploading}
                 />
-                <label 
-                  htmlFor="file-input" 
+                <label
+                  htmlFor="file-input"
                   className="browse-button"
                 >
                   <span>📁</span>

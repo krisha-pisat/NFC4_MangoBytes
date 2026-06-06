@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: mangobytes-backend
+    ports:
+      - "5000:5000"
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    env_file:
+      - ./backend/.env
+    environment:
+      - FLASK_ENV=development
+    volumes:
+      # Mount the local backend folder to the container for hot-reloading
+      - ./backend:/app
+      # Keep container's pycache isolated from the host
+      - /app/__pycache__
+    restart: always
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: mangobytes-frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      # Mount the local frontend folder to the container for hot-reloading
+      - ./frontend:/app
+      # Prevent the host node_modules from overwriting the container's node_modules
+      - /app/node_modules
+    depends_on:
+      - backend
+    restart: always
