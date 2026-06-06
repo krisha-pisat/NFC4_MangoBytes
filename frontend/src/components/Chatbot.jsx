@@ -2,6 +2,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import jsPDF from 'jspdf';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import DocumentSummary from './DocumentSummary';
 import './Chatbot.css';
 import './Summary.css';
@@ -273,31 +275,6 @@ const Chatbot = ({ documentNames, documentIds, onBackToUpload }) => {
     }
   };
 
-  const formatSummaryText = (text) => {
-    // Check if this looks like a summary (has markdown headers)
-    if (text.includes('# 📋') || text.includes('## 📊') || text.includes('## 📝')) {
-      return (
-        <div className="summary-container">
-          <div dangerouslySetInnerHTML={{ 
-            __html: text
-              .replace(/# 📋 DOCUMENT SUMMARY/g, '<h1 class="summary-title">📋 DOCUMENT SUMMARY</h1>')
-              .replace(/## 📊 OVERALL SUMMARY/g, '<h2 class="summary-section-title">📊 OVERALL SUMMARY</h2>')
-              .replace(/## 📝 SECTION-WISE BREAKDOWN/g, '<h2 class="summary-section-title">📝 SECTION-WISE BREAKDOWN</h2>')
-              .replace(/## 🔍 KEY FINDINGS & HIGHLIGHTS/g, '<h2 class="summary-section-title">🔍 KEY FINDINGS & HIGHLIGHTS</h2>')
-              .replace(/## 🎯 MAIN TOPICS & THEMES/g, '<h2 class="summary-section-title">🎯 MAIN TOPICS & THEMES</h2>')
-              .replace(/## 💡 RECOMMENDATIONS & INSIGHTS/g, '<h2 class="summary-section-title">💡 RECOMMENDATIONS & INSIGHTS</h2>')
-              .replace(/## 📈 KEY STATISTICS/g, '<h2 class="summary-section-title">📈 KEY STATISTICS</h2>')
-              .replace(/\*\*(.*?)\*\*/g, '<span class="summary-bold">$1</span>')
-              .replace(/\n• /g, '<div class="summary-bullet">')
-              .replace(/\n\n/g, '</div><div class="summary-bullet">')
-              .replace(/\n### \*\*(.*?)\*\*/g, '<h3 class="summary-subsection">$1</h3>')
-          }} />
-        </div>
-      );
-    }
-    return text;
-  };
-
   const formatTime = (timestamp) => {
     return timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
@@ -405,7 +382,13 @@ const Chatbot = ({ documentNames, documentIds, onBackToUpload }) => {
                 {messages.map((msg, idx) => (
                   <div key={idx} className={`message ${msg.sender}`}>
                     <div className="message-content">
-                      {msg.sender === 'bot' ? formatSummaryText(msg.text) : msg.text}
+                      {msg.sender === 'bot' ? (
+                        <div className="bot-markdown">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {typeof msg.text === 'string' ? msg.text : ''}
+                          </ReactMarkdown>
+                        </div>
+                      ) : msg.text}
                     </div>
                     <div className="message-time">
                       {formatTime(msg.timestamp)}
