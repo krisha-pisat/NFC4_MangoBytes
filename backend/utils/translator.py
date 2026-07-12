@@ -11,11 +11,11 @@ _llm = ChatGroq(
     model="llama-3.1-8b-instant",
     api_key=os.getenv("GROQ_API_KEY"),
     temperature=0.1,
-    max_tokens=1500
+    max_tokens=4000,
 )
 
 def groq_generate(prompt, **kwargs):
-    """Drop-in replacement for old groq_api.groq_generate using ChatGroq."""
+    """Invoke the translation LLM, ignoring legacy kwargs."""
     try:
         response = _llm.invoke([HumanMessage(content=prompt)])
         return response.content
@@ -45,7 +45,7 @@ def is_english(text):
     detected_lang = detect_language(text)
     return detected_lang == 'en'
 
-def translate_with_groq(text, source_lang, target_lang='en', max_chunk_size=2000):
+def translate_with_groq(text, source_lang, target_lang='en', max_chunk_size=800):
     """
     Translate text using Groq API with proper chunking
     """
