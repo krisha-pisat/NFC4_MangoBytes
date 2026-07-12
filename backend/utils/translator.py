@@ -127,40 +127,9 @@ Translation:"""
         return translate_with_google(text, source_lang, target_lang)
 
 def translate_with_google(text, source_lang, target_lang='en'):
-    """
-    Fallback translation using Google Translate
-    """
-    try:
-        print(f"🌍 Using Google Translate fallback: {source_lang} → {target_lang}")
-        
-        # Google Translate has a character limit, so we need to chunk
-        max_chars = 4500  # Google's limit is ~5000 chars
-        chunks = [text[i:i+max_chars] for i in range(0, len(text), max_chars)]
-        
-        translated_chunks = []
-        for i, chunk in enumerate(chunks):
-            if not chunk.strip():
-                translated_chunks.append(chunk)
-                continue
-                
-            try:
-                result = google_translator.translate(
-                    chunk, 
-                    src=source_lang, 
-                    dest=target_lang
-                )
-                translated_chunks.append(result.text)
-                print(f"✅ Google Translate chunk {i+1}/{len(chunks)} completed")
-                
-            except Exception as e:
-                print(f"❌ Google Translate error for chunk {i+1}: {str(e)}")
-                translated_chunks.append(chunk)  # Keep original if translation fails
-        
-        return " ".join(translated_chunks)
-        
-    except Exception as e:
-        print(f"❌ Google Translate fallback failed: {str(e)}")
-        return text  # Return original text if all translation methods fail
+    """Fallback when Groq translation fails — returns original text."""
+    print(f"⚠️ Google Translate not available; keeping original {source_lang} text")
+    return text
 
 def split_text_for_translation(text, max_size=2000):
     """
