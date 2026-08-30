@@ -8,7 +8,7 @@ from langchain_core.messages import HumanMessage
 load_dotenv()
 
 _llm = ChatGroq(
-    model="llama-3.1-8b-instant",
+    model=os.getenv("GROQ_MODEL", "openai/gpt-oss-20b"),
     api_key=os.getenv("GROQ_API_KEY"),
     temperature=0.1,
     max_tokens=4000,

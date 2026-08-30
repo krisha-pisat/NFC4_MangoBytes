@@ -13,12 +13,13 @@ from langchain_mongodb.chat_message_histories import MongoDBChatMessageHistory
 load_dotenv()
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_MODEL   = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
 MONGO_URI    = os.getenv("MONGO_URI")
 DATABASE_NAME = os.getenv("DATABASE_NAME")
 
 # ── LLM ──────────────────────────────────────────────────────────────────────
 llm = ChatGroq(
-    model="llama-3.1-8b-instant",
+    model=GROQ_MODEL,
     api_key=GROQ_API_KEY,
     temperature=0.3,
     max_tokens=1500
